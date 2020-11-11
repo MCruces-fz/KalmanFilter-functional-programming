@@ -1,3 +1,27 @@
+"""
+Representation of efficiency
+    ^
+ %  | ...............
+rec.|                ····..
+    |                      ·
+    |                       :
+    |                        :
+    +------------------------------>
+                            Cut Probability Value
+
+Data is taken from all_bins_NTRACKS_tracks.txt, which is written by
+kalmanTRAG.py with flags:
+  - rd_seed: int or None = None
+  - single_run: bool = False
+  - do_efficiency: bool = True
+  - if_repr: bool = False
+  - if_final_prints: bool = False
+  - if_save_diff: bool = False
+  - NTRACKS = int (quantity of desired generated tracks)
+
+@author: Miguel Cruces
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 

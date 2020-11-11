@@ -10,11 +10,11 @@ Miguel Cruces
 
 """
 from scipy import stats
-from const import *  # Numpy as np imported in const.py
 from matplotlib.patches import Rectangle
 import mpl_toolkits.mplot3d.art3d as art3d
 import matplotlib.pyplot as plt
 import time
+import numpy as np
 
 # ========================================================================== #
 # ======= I N I T I A L   V A L U E S --- C O N F I G U R A T I O N ======== #
@@ -24,10 +24,10 @@ rd_seed: int or None = None
 """ Choose an integer seed for numpy random generator, or keep it random with 
 'None' """
 
-single_run = True
+single_run: bool = True
 kfcut: float = 0.6
 ttcut: float = 1e-5
-do_efficiency = False
+do_efficiency: bool = False
 
 if_repr: bool = True
 """ Set if shows the 3D representation of rays on the detector """
@@ -48,6 +48,90 @@ on append mode.
 """
 
 np.set_printoptions(formatter={'float': '{:.3f}'.format})
+
+# ========================================================================== #
+# ============================ C O N S T A N T S =========================== #
+# ========================================================================== #
+
+VC = 0.3  # [MM/PS]
+SC = 1 / VC  # SLOWNESS ASSOCIATED WITH LIGHT SPEED
+MELE = 0.511  # (MeV/c**2) ELECTRON
+MMU = 105.6  # (MeV/c**2) MUON
+MPRO = 938.3  # (MeV/c**2) PROTON
+
+# ============================= #
+# ==== Data to be Modified ==== #
+# ============================= #
+
+MASS = MMU
+KENE = 1000  # (MeV) KINETIC ENERGY
+ENE = MASS + KENE  # (MeV) TOTAL ENERGY
+GAMMA = ENE / MASS  # GAMMA FACTOR
+BETA = np.sqrt(1 - 1 / GAMMA ** 2)  # BETA FACTOR
+BETGAM = BETA * GAMMA
+VINI = BETA * VC  # INITIAL VELOCITY
+# SINI = 1 / VINI  # INITIAL SLOWNESS
+PMOM = BETGAM * MASS  # MOMENTUM
+
+NTRACK = 5  # NUM. OF TRACKS TO BE GENERATED
+THMAX = 90  # MAX THETA IN DEGREES
+NPAR = 6  # NUM. OF PARAMETERS TO BE FITTED
+NDAC = 3  # NUM DATA PER CELL: X, Y, T
+
+# ===================================== #
+# ==== Initial values of 20 and t0 ==== #
+# ===================================== #
+
+SINI = SC  # INITIAL SLOWNESS
+TINI = 1000  # INITIAL TIME
+
+# ========================= #
+# ==== Detector design ==== #
+# ========================= #
+'''
+- Rectangular detector with ncx * ncy rectangular electrodes
+- It is assumed that the origin is in one edge of the detector
+
+P L A N E S   D I S T R I B U T I O N
+
+                                 [mm]   [mm]
+T1 # -------------------------- # 1826      0  TOP
+
+T2 # -------------------------- # 1304    522
+T3 # -------------------------- #  924    902
+
+
+T4 # -------------------------- #   87   1739  BOTTOM
+                                     0         GROUND
+'''
+# VZI = [1800, 1200, 900, 0]  # mm. POSITION OF THE PLANES IN Z AXIS, MEASURED FROM GROUND TO TOP
+# VZ = [0, 600, 900, 1800]  # mm. POSITION OF PLANES MEASURED FROM TOP TO BOTTOM
+VZ0 = np.array([1826, 1304, 924, 87])  # mm. REAL HEIGHTS
+VZ1 = VZ0[0] - VZ0  # mm. HEIGHTS MEASURED FROM TOP: [0, 522, 902, 1739]
+NPLAN = len(VZ0)  # NUM. OF PLANES
+NCX = 12  # NUM. OF CELLS IN X
+NCY = 10  # NUM. OF CELLS IN Y
+LENX = 1500  # mm. LENGTH IN X
+LENY = 1200  # mm. LENGTH IN Y
+LENZ = VZ0[0] - VZ0[-1]  # mm. LENGTH IN Z (HEIGHT OF THE DETECTOR)
+WCX = LENX / NCX  # mm. CELL WIDTH IN X
+WCY = LENY / NCY  # mm. CELL WIDTH IN Y
+DT = 100  # DIGITIZER PRECISION
+
+# ======================= #
+# ==== Uncertainties ==== #
+# ======================= #
+
+SIGX = (1 / np.sqrt(12)) * WCX
+SIGY = (1 / np.sqrt(12)) * WCY
+SIGT = 300  # [PS]
+WX = 1 / SIGX ** 2
+WY = 1 / SIGY ** 2
+WT = 1 / SIGT ** 2
+
+# DEFAULT VARIANCES:
+VSLP = 0.1 ** 2  # VARIANCE FOR SLOPE
+VSLN = 0.01 ** 2  # VARIANCE FOR SLOWNESS
 
 # ========================================================================== #
 # ============= K A L M A N   F I L T E R   F U N C T I O N S ============== #
@@ -429,7 +513,7 @@ def plot_saetas(vector, fig_id: int or str or None = None,
                     plt.plot([-0.5, 12.5], [yi, yi], [zi, zi], 'k', alpha=0.1)
                     plt.plot([xi, xi], [-0.5, 10.5], [zi, zi], 'k', alpha=0.1)
     ax.legend(loc='best')
-    plt.show()
+    # plt.show()
 
 
 def plot_hit_ids(k_vec, fig_id: str = None, plt_title: str or None = None,
@@ -477,7 +561,7 @@ def plot_hit_ids(k_vec, fig_id: str = None, plt_title: str or None = None,
     ax.plot(x, y, VZ0, 'k.', alpha=0.9)
 
     ax.legend(loc='best')
-    plt.show()
+    # plt.show()
     # fig.show()
 
 
@@ -526,7 +610,7 @@ def plot_detector(k_mat=None, fig_id=None, plt_title='Matrix Rays',
                         lbl=f'Reco. {rec + 1}', frmt_color='b', frmt_marker='-',
                         prob_s=prob_ary[rec])
 
-    plt.show()
+    # plt.show()
 
 
 # ========================================================================== #
@@ -854,9 +938,9 @@ if single_run:
     saeta_kf = m_stat[:, 13:-1]
     saeta_tt = mtrec[:, 13:-1]
 
-# ========================================================================== #
-# ===================== R E P R E S E N T A T I O N S ====================== #
-# ========================================================================== #
+    # ========================================================================== #
+    # ===================== R E P R E S E N T A T I O N S ====================== #
+    # ========================================================================== #
 
     if if_repr:
         prob_tt = mtrec[:, -1]
@@ -934,7 +1018,7 @@ elif do_efficiency:
         var = np.average((mids - mean) ** 2, weights=n)
         std = np.sqrt(var)
         plt.title(f"kf_cut: {kf_cut} | Mean: {mean:.3f}, Var: {var:.3f}, Std: {std:.3f}")
-        # plt.show()
+        # # plt.show()
         plt.close(f"Cut {cut}")
         all_bins = np.vstack((all_bins, n))
     all_bins = all_bins.astype(np.uint16).T
@@ -949,4 +1033,4 @@ else:
 # TODO: Create different branches:
 #  - (kf_lineal) Kalman Filter Lineal
 #  - (master) Kalman Filter Classes
-
+plt.show()
