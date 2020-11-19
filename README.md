@@ -1,10 +1,10 @@
 # KalmanFilter-functional-programming
   Code that simulates particle showers and reconstructs their tracks from 
- their fingerprints on the TRAGALDABAS detector.
+their fingerprints on the TRAGALDABAS detector.
  
- This detector is composed by four plates/plans with 120 cells each one, 
- capable of detect particles. By linking those fingerprints, we want to 
- reconstruct the initial track using Kalman Filter.
+  This detector is composed by four plates/plans with 120 cells each one, 
+capable of detect particles. By linking those fingerprints, we want to 
+reconstruct the initial track using Kalman Filter.
 
 ## REVIEW
 
@@ -41,3 +41,5 @@ Some coding criteria:
 > Distances in *mm*  
 > Time in *ps*
 ********************************************************************
+### Naming
+

@@ -20,23 +20,32 @@ import numpy as np
 # ======= I N I T I A L   V A L U E S --- C O N F I G U R A T I O N ======== #
 # ========================================================================== #
 
-rd_seed: int or None = None
-""" Choose an integer seed for numpy random generator, or keep it random with 
-'None' """
+config = {
+    "rd_seed": None,  # Choose an integer seed for numpy random generator,
+    # or keep it random with 'None'
+    "kf_cut": 0.6,  # Kalman Filter cut value (kf_cut = 0.6 is the most efficient)
+    "tt_cut": 1e-5,  # Tim Track cut value
+    "tracks_number": 1,  # Number of generated tracks
+    "single_run": {
+        "do": True,  # Do single run?
+        "plot_representations": True,  # Set if shows the 3D representation of
+        # rays on the detector
+        "final_prints": True,  # Set if print final data
+        "save_diff": False  # Set if save differences between parameters of the
+        # generated and reconstructed SAETAs (See below "SAVE DIFFERENCIES" docstring)
+    },
+    "efficiency": {
+        "do": False,
+        "prints": True,
+        "plots": True,
+        "save_txt": False
+    }
+}
 
-single_run: bool = True
-kfcut: float = 0.6
-ttcut: float = 1e-5
-do_efficiency: bool = False
-
-if_repr: bool = True
-""" Set if shows the 3D representation of rays on the detector """
-
-if_final_prints: bool = False
-""" Set if print final data """
-
-if_save_diff: bool = False
 """
+#   --   S A V E   D I F F E R E N C I E S   --   #
+___________________ (save_diff) ___________________
+
 Set if save differences between parameters of the generated and reconstructed 
 SAETAs,
     Sgen = [X0g, XPg, Y0g, YPg, T0g, S0g]
@@ -48,6 +57,13 @@ on append mode.
 """
 
 np.set_printoptions(formatter={'float': '{:.3f}'.format})
+
+# Randomize if rd_seed is an integer seed
+if config["rd_seed"] is not None:
+    np.random.seed(config["rd_seed"])
+
+if config["single_run"]["plot_representations"]:
+    plt.close("all")
 
 # ========================================================================== #
 # ============================ C O N S T A N T S =========================== #
@@ -73,7 +89,7 @@ VINI = BETA * VC  # INITIAL VELOCITY
 # SINI = 1 / VINI  # INITIAL SLOWNESS
 PMOM = BETGAM * MASS  # MOMENTUM
 
-NTRACK = 5  # NUM. OF TRACKS TO BE GENERATED
+NTRACK = config["tracks_number"]  # NUM. OF TRACKS TO BE GENERATED
 THMAX = 90  # MAX THETA IN DEGREES
 NPAR = 6  # NUM. OF PARAMETERS TO BE FITTED
 NDAC = 3  # NUM DATA PER CELL: X, Y, T
@@ -137,15 +153,8 @@ VSLN = 0.01 ** 2  # VARIANCE FOR SLOWNESS
 # ============= K A L M A N   F I L T E R   F U N C T I O N S ============== #
 # ========================================================================== #
 
-# Randomize if rd_seed is an integer seed
-if rd_seed is not None:
-    np.random.seed(rd_seed)
 
-if if_repr:
-    plt.close("all")
-
-
-def diag_matrix(dim: int, diag: list):
+def diag_matrix(dim: int, diag: list or object):
     """
     Create squared k_mat of dimXdim dimension with diag in the diagonal.
 
@@ -168,17 +177,17 @@ def gene_tracks(all_tracks_in: bool = True, ntrack=NTRACK):
         randomly deleting outisders.
     :param ntrack: Number of generated tracks.
 
-    :return mtgen: Matrix of generated tracks (initial saetas).
+    :return generated_tracks: Matrix of generated tracks (initial saetas).
     :return nt: Total number of tracks in the detector
     """
-    ctmx = np.cos(np.deg2rad(THMAX))  # Theta max angle cosine
+    cos_theta_max = np.cos(np.deg2rad(THMAX))  # Theta max angle cosine
     # lenz = abs(VZI[0] - VZI[-1])  # Distance from bottom to top planes
     it = 0  # Number of tracks actually
-    mtgen = np.zeros([ntrack, NPAR])  # generated tracks k_mat
+    generated_tracks = np.zeros([ntrack, NPAR])  # generated tracks k_mat
     i = 1
     while i <= ntrack:
         # Uniform distribution in cos(theta) and phi
-        rcth = 1 - np.random.random() * (1 - ctmx)
+        rcth = 1 - np.random.random() * (1 - cos_theta_max)
         tth = np.arccos(rcth)  # theta random angle
         tph = np.random.random() * 2 * np.pi  # phi random angle
 
@@ -207,13 +216,13 @@ def gene_tracks(all_tracks_in: bool = True, ntrack=NTRACK):
             i += 1
         # We check if the particle has entered the detector
         if np.abs(xmid) < (LENX / 2) and np.abs(ymid) < (LENY / 2):
-            mtgen[it, :] = [X0, XP, Y0, YP, T0, S0]
+            generated_tracks[it, :] = [X0, XP, Y0, YP, T0, S0]
             it += 1
             if all_tracks_in:
                 i += 1
     nt = it  # number of tracks in the detector
-    mtgen = mtgen[~(mtgen == 0).all(1)]
-    return mtgen, nt
+    generated_tracks = generated_tracks[~(generated_tracks == 0).all(1)]
+    return generated_tracks, nt
 
 
 def trag_digitization(nt: int, mtgen):
@@ -223,6 +232,9 @@ def trag_digitization(nt: int, mtgen):
     It converts the parameters inside mtgen to discrete
     numerical values, which are the cell indices (m_dat) and
     cell central positions (m_dpt).
+
+    - m_dat --> (kx1, ky2, time1, kx2, ky2, time2, ...)  Indices of impact
+    - m_dpt --> ( X1,  Y1,    T1,  X2,  Y2,    T2, ...)  Real points of impact / mm
 
     :param nt: Number of tracks generated across the detector.
     :param mtgen: Matrix of generated tracks
@@ -271,6 +283,7 @@ def trag_digitization(nt: int, mtgen):
 def matrix_det(m_dat):
     """
     Creates a k_mat similar to TRAGALDABAS output data
+    Matrix with columns: (nhits, kx, ky, time)
 
     :param m_dat: Matrix of generated and digitized tracks.
     :return: Equivalent k_mat to m_data, in TRAGALDABAS format.
@@ -340,7 +353,7 @@ def set_mdet_xy(m_det):
     mdet with x & y in mm
 
     Columns:
-    Hits per plane | X [mm] | Y [mm] | Time [ps]
+    | Hits per plane | X [mm] | Y [mm] | Time [ps] |
 
     :param m_det: Matrix with TRAGALDABAS output data
     :return: Matrix equivalent to m_det with positions in mm.
@@ -631,62 +644,6 @@ def v_g0_tt(vs, z):
     return vg0
 
 
-'''
-def m_K_a_tt(vs, z, vw, vdat):
-    """
-    It calculates the K k_mat and the new state vector.
-    NPAR =  6 parameters version: X0, XP, Y0, YP, T0, S0
-
-    :param vs: State vector input
-    :param z: Height in mm of the plane
-    :param vw: Vector of cell widths
-    :param vdat: Vector of measured data in mm
-    :return: K k_mat and vector for a pad plane
-    """
-    mk = np.zeros([NPAR, NPAR])
-    va = np.zeros(NPAR)
-    xp = vs[1]
-    yp = vs[3]
-    # t0   = vs[4]
-    s0 = vs[5]
-    ks2 = 1 + xp * xp + yp * yp  # slope factor
-    wx = vw[0]
-    wy = vw[1]
-    wt = vw[2]
-    dx = vdat[0]
-    dy = vdat[1]
-    dt = vdat[2]
-
-    mk[0, 0] = wx
-    mk[0, 1] = z * wx
-    mk[1, 1] = z ** 2 * (wx + wt * (1 / ks2) * xp * xp * s0 * s0)
-    mk[1, 3] = z ** 2 * wt * (1 / ks2) * xp * yp * s0 ** 2
-    mk[1, 4] = z * wt * (1 / np.sqrt(ks2)) * xp * s0
-    mk[1, 5] = z ** 2 * wt * xp * s0
-    mk[2, 2] = wy
-    mk[2, 3] = z * wy
-    mk[3, 3] = z ** 2 * (wy + wt * (1 / ks2) * yp * yp * s0 * s0)
-    mk[3, 4] = z * wt * (1 / ks2) * yp * s0
-    mk[3, 5] = z ** 2 * wt * yp * s0
-    mk[4, 4] = wt
-    mk[4, 5] = z * wt * np.sqrt(ks2)
-    mk[5, 5] = z ** 2 * wt * ks2
-
-    # Vai =
-    va[0] = wx * dx
-    va[1] = z * (wx * dx + wt * xp * s0 * (dt * (1 / np.sqrt(ks2)) + z * (1 / ks2) * (xp ** 2 + yp ** 2) * s0))
-    va[2] = wy * dy
-    va[3] = z * (wy * dy + wt * yp * s0 * (dt * (1 / np.sqrt(ks2)) + z * (1 / ks2) * (xp ** 2 + yp ** 2) * s0))
-    va[4] = wt * (dt + z * (1 / np.sqrt(ks2)) * s0 * (xp ** 2 + yp ** 2))
-    va[5] = z * wt * ks * (dt + z * (1 / np.sqrt(ks2)) * (xp ** 2 + yp ** 2) * s0)
-
-    # Por ser simetrica, mK=mK' (traspuesta)
-    mk = mk + mk.T - np.diag(mk.diagonal())
-
-    return mk, va
-'''
-
-
 def set_mG_tt(saeta, zi):
     """
     Jacobian k_mat
@@ -734,7 +691,7 @@ def set_vstat_tt(mG, mW, vdat, vg0):
 
 def tim_track_fit(v_stat):
     vw = np.array([WX, WY, WT])  # Vector of Weights
-    mvw = diag_matrix(3, [WX, WY, WT])  # Wieght Matrix (inverse of the V diagonal k_mat)
+    mvw = diag_matrix(3, vw)  # Wieght Matrix (inverse of the V diagonal k_mat)
 
     saeta = v_stat[13:-1]
     k_vector = v_stat[:13]
@@ -747,8 +704,8 @@ def tim_track_fit(v_stat):
     for ip in range(NPLAN):  # Loop over hits in each track from TOP
         zi = VZ1[ip]  # [0, 522, 902, 1739] mm
         ii = ip * 3 + 1  # Initial index to search values
-        dxi = k_vector[ii] * WCX  # - (WCX / 2)
-        dyi = k_vector[ii + 1] * WCY  # - (WCY / 2)
+        dxi = k_vector[ii] * WCX
+        dyi = k_vector[ii + 1] * WCY
         dti = k_vector[ii + 2]
         vdat = np.array([dxi, dyi, dti])  # Measured data
 
@@ -759,7 +716,7 @@ def tim_track_fit(v_stat):
 
         mK += mKi
         va += vai
-        # print(f"vdat = {vdat}\n vg0 = {vg0}")
+
         so += np.dot((vdat - vg0).T, np.dot(mvw, (vdat - vg0)))  # soi values
 
     mK = np.asmatrix(mK)  # K k_mat (symmetric)
@@ -771,19 +728,15 @@ def tim_track_fit(v_stat):
     sks = float(np.dot(vsol.T, np.dot(mK, vsol)))  # s'·K·s
     sa = float(np.dot(vsol.T, va))  # s'·a
     S = sks - 2 * sa + so  # S = s'·K·s - 2s'·a + So
-    # print(f"S = sks - 2*sa + so = {sks:.3f} - 2*{sa:.3f} + {so:.3f} = {S:.3f}")
 
     DoF = NPLAN * NDAC - NPAR  # Degrees of Freedom
     prob = stats.chi2.sf(S, DoF)
-    # print(f"prob = {prob:.3e} EXP")
-    # print(f"prob = {prob:.4f}  FLOAT")
 
-    # mtrec = np.vstack((mtrec, vsol))
     vsol = np.asarray(vsol.T)[0]  # Make it a normal array again
     return vsol, prob
 
 
-def kalman_filter_find(mdet, dcut=kfcut, tcut=ttcut):
+def kalman_filter_find(mdet, dcut=config["kf_cut"], tcut=config["tt_cut"]):
     """
     Main Finding Function using Kalman Filter Algorithm
 
@@ -906,34 +859,17 @@ def kalman_filter_find(mdet, dcut=kfcut, tcut=ttcut):
 # ====================== G E N E - D I G I T - A N A ======================= #
 # ========================================================================== #
 
-if single_run:
+if config["single_run"]["do"]:
     # ============== TRACKS GENERATION ============= #
     mtrk, nt = gene_tracks()
-    """
-    - mtrk --> Initial Saetas
-    - nt ----> Number of tracks in the detector
-    """
 
     # ================ DIGITIZATION ================ #
-    mdpt, mdat = trag_digitization(nt, mtgen=mtrk)  #
-    """
-    Digitization for TRAGALDABAS detector
-    - mdat --> (kx1, ky2, time1, kx2, ky2, time2, ...)  Indices of impact
-    - mdpt --> ( X1,  Y1,    T1,  X2,  Y2,    T2, ...)  Real points of impact / mm
-    """
-
+    mdpt, mdat = trag_digitization(nt, mtgen=mtrk)
     mdet = matrix_det(mdat)
-    """
-    Matrix with columns: (nhits, kx, ky, time)
-    """
     mdet_xy = set_mdet_xy(mdet)
-    """
-    Matrix (mdet) with columns: (nhits, x [mm], y [mm], time)
-    """
 
     # ================== ANALYSIS ================== #
-
-    m_stat, mtrec = kalman_filter_find(mdet, dcut=kfcut, tcut=ttcut)
+    m_stat, mtrec = kalman_filter_find(mdet, dcut=config['kf_cut'], tcut=config['tt_cut'])
 
     saeta_kf = m_stat[:, 13:-1]
     saeta_tt = mtrec[:, 13:-1]
@@ -942,19 +878,20 @@ if single_run:
     # ===================== R E P R E S E N T A T I O N S ====================== #
     # ========================================================================== #
 
-    if if_repr:
+    if config["single_run"]["plot_representations"]:
         prob_tt = mtrec[:, -1]
         prob_kf = m_stat[:, -1]
         k_mat_gene = mdat
         # plot_detector(fig_id=f"cut = {kfcut}", plt_title=f"Track Finding (KF)", cells=True,
         #               k_mat=k_mat_gene, mtrack=mtrk, mrec=saeta_kf, prob_ary=prob_kf)
-        plot_detector(fig_id=f"cut = {ttcut}", plt_title=f"Track Fitting (TT)", cells=True,
+        plot_detector(fig_id=f"cut = {config['tt_cut']}", plt_title=f"Track Fitting (TT)", cells=True,
                       k_mat=k_mat_gene, mtrack=mtrk, mrec=saeta_tt, prob_ary=prob_tt)
         k_mat_rec = mtrec[:, 1:13]
         # plot_detector(fig_id='Id-Rec', plt_title="Reconstructed by Indices", cells=True,
         #               k_mat=k_mat_rec)
+        plt.show()
 
-    if if_final_prints:
+    if config["single_run"]["final_prints"]:
         print("# ================ P R I N T S ================ #")
         print(f"Generated SAETAs:\n{mtrk}\n")
         print(f"Track Finding SAETAs:\n{saeta_kf}\n")
@@ -968,7 +905,7 @@ if single_run:
             pass
         print("# ============================================= #")
 
-    if if_save_diff:
+    if config["single_run"]["save_diff"]:
         with open("saetas_file.csv", "a+") as f:
             try:
                 relative_saeta = saeta_tt[0] - mtrk[0]
@@ -984,7 +921,7 @@ if single_run:
 # ========================== E F F I C I E N C Y =========================== #
 # ========================================================================== #
 
-elif do_efficiency:
+elif config["efficiency"]["do"]:
 
     nb_tracks = 3
     bins_list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
@@ -997,7 +934,8 @@ elif do_efficiency:
         kf_cut = cut
         tt_cut = 0
         n_rec = np.array([], dtype=np.uint8)
-        print(f"{int(cut * 100)}%")
+        if config["efficiency"]["prints"]:
+            print(f"{int(cut * 100)}%")
         for run in range(1000):
             np.random.seed(int(time.time() * 1e6) % 2 ** 32)
             mtrk, nt = gene_tracks(ntrack=nb_tracks)
@@ -1010,27 +948,32 @@ elif do_efficiency:
             saeta_tt = mtrec[:, 13:-1]
 
             n_rec = np.append(n_rec, saeta_kf.shape[0])
-        # plot histogram
-        plt.figure(f"Cut {cut}")
-        n, bins, _ = plt.hist(n_rec, bins=bins_list)
-        mids = (bins[1:] + bins[:-1]) / 2
-        mean = np.average(mids, weights=n)
-        var = np.average((mids - mean) ** 2, weights=n)
-        std = np.sqrt(var)
-        plt.title(f"kf_cut: {kf_cut} | Mean: {mean:.3f}, Var: {var:.3f}, Std: {std:.3f}")
-        # # plt.show()
-        plt.close(f"Cut {cut}")
+        if config["efficiency"]["plots"]:
+            # plot histogram
+            plt.figure(f"Cut {cut}")
+            n, bins, _ = plt.hist(n_rec, bins=bins_list)
+            mids = (bins[1:] + bins[:-1]) / 2
+            mean = np.average(mids, weights=n)
+            var = np.average((mids - mean) ** 2, weights=n)
+            std = np.sqrt(var)
+            plt.title(f"kf_cut: {kf_cut} | Mean: {mean:.3f}, Var: {var:.3f}, Std: {std:.3f}")
+            # plt.show()
+            # plt.close(f"Cut {cut}")
+        else:
+            n, bins = np.histogram(n_rec, bins=bins_list)
         all_bins = np.vstack((all_bins, n))
     all_bins = all_bins.astype(np.uint16).T
     plt.matshow(all_bins)
-    np.savetxt(f"all_bins_{nb_tracks}_tracks.txt", all_bins)
+    if config["efficiency"]["plots"]:
+        plt.show()
+    if config["efficiency"]["save_txt"]:
+        np.savetxt(f"all_bins_{nb_tracks}_tracks.txt", all_bins)
 
 else:
-    print("Ojo cuidao, atento a los Settings (if_single_run = do_efficiency = False)")
+    print("Ojo cuidao, atento a los Settings de config (single_run = efficiency = False?)")
 
 # TODO: Lluvias a distintas alturas (Preguntar a Hans)
 
 # TODO: Create different branches:
 #  - (kf_lineal) Kalman Filter Lineal
 #  - (master) Kalman Filter Classes
-plt.show()
