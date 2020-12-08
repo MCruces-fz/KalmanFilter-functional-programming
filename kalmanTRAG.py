@@ -21,14 +21,14 @@ import numpy as np
 # ========================================================================== #
 
 config = {
-    "rd_seed": None,  # Choose an integer seed for numpy random generator,
+    "rd_seed": 0,  # Choose an integer seed for numpy random generator,
     # or keep it random with 'None'
     "kf_cut": 0.6,  # Kalman Filter cut value (kf_cut = 0.6 is the most efficient)
     "tt_cut": 1e-5,  # Tim Track cut value
-    "tracks_number": 1,  # Number of generated tracks
+    "tracks_number": 2,  # Number of generated tracks
     "single_run": {
         "do": True,  # Do single run?
-        "plot_representations": True,  # Set if shows the 3D representation of
+        "plot_representations": False,  # Set if shows the 3D representation of
         # rays on the detector
         "final_prints": True,  # Set if print final data
         "save_diff": False  # Set if save differences between parameters of the
