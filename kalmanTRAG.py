@@ -9,12 +9,19 @@ miguel.cruces@rai.usc.es
 Miguel Cruces
 
 """
-from scipy import stats
+
 from matplotlib.patches import Rectangle
+from scipy import stats
 import mpl_toolkits.mplot3d.art3d as art3d
-import matplotlib.pyplot as plt
 import time
 import numpy as np
+
+try:
+    import matplotlib.pyplot as plt
+except AttributeError:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
 
 # ========================================================================== #
 # ======= I N I T I A L   V A L U E S --- C O N F I G U R A T I O N ======== #
